@@ -140,6 +140,9 @@ class MatchResponse(BaseModel):
     budget: BudgetOut
     circumference: int
     optimalMappingCount: int
+    # 计数的精确十进制字符串：计数可超过 JavaScript 安全整数范围（2^53-1），
+    # 数字字段仍保留完整数值，前端与任何消费方须以本字符串作为精确展示/比对依据
+    optimalMappingCountText: str
     configurationsExamined: int
     computeMs: int
     witnesses: list[WitnessOut]

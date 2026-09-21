@@ -49,8 +49,8 @@ docker compose --profile verify up --build --exit-code-from verify
 固定参考环起点（叶片编号是绝对坐标），枚举实测环 **2 个方向 × 全部 m 个起点**
 共 2m 个配置。对每个配置做分组动态规划：`dp[i][j]` 为参考环前 i 个间隔与实测环
 前 j 个间隔对齐的最优字典序代价，转移枚举最后一组两侧跨度 (a, b) ∈ {1,2,3}²。
-所有配置的 DP 以 numpy 向量化批量推进（按参考前缀逐行滚动），并同步维护最优
-路径的饱和计数。
+所有配置的 DP 以 numpy 向量化批量推进（按参考前缀逐行滚动），并以 Python
+任意精度整数同步维护最优路径的**精确计数**（不做饱和截断）。
 
 一个对位映射由 **(方向, 起点, 各组切分)** 完全确定（其规范形式），最优路径计数
 即最优规范映射数：
@@ -59,6 +59,11 @@ docker compose --profile verify up --build --exit-code-from verify
 - 计数 = 1 → `unique`，返回该见证；
 - 计数 ≥ 2 → `ambiguous`，返回两份规范形式不同的最优见证（优先不同配置，
   同一配置内则在最后一个存在备选最优转移的单元处分叉），供前端逐组高亮差异。
+
+计数始终为精确值（Python 任意精度整数，规模可远超 2^53）。JSON 响应同时提供
+`optimalMappingCount`（精确数值，超出 JavaScript `Number.MAX_SAFE_INTEGER`
+时在 JS 中会损失精度）与 `optimalMappingCountText`（恒精确的十进制字符串），
+精确比对与页面展示一律以后者为准；状态消息 `message` 中的计数同样为精确值。
 
 复杂度：O(n·m·方向起点数) ≈ 160×200×400 上限规模，向量化后约 1–3 s；
 常规规模（数十叶片）为毫秒级。
@@ -91,6 +96,7 @@ docker compose --profile verify up --build --exit-code-from verify
   "budget": { "limit": 4, "used": 1, "within": true },
   "circumference": 600,
   "optimalMappingCount": 1,
+  "optimalMappingCountText": "1",
   "configurationsExamined": 22,
   "computeMs": 3,
   "witnesses": [

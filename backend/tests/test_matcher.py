@@ -8,7 +8,6 @@ import random
 import pytest
 
 from app.matcher import (
-    COUNT_CAP,
     MAX_SPAN,
     Objective,
     Witness,
@@ -76,7 +75,7 @@ def brute_force(ref: list[int], meas: list[int], tolerance: int):
                             best, count = obj, 1
                         elif obj == best:
                             count += 1
-    return best, min(count, COUNT_CAP)
+    return best, count
 
 
 def _check_against_brute(ref, meas, tolerance):

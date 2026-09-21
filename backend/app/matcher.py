@@ -18,8 +18,8 @@
 固定参考环起点（叶片编号是绝对坐标），完整枚举实测环的两个方向与全部
 m 个起点，共 2m 个候选配置。对每个配置做分组动态规划；所有配置的 DP
 以 numpy 向量化方式批量推进（按参考环前缀逐行滚动，每行对所有配置与
-实测位置同时求字典序最优），并同步维护最优路径计数（饱和计数），从而
-判定最优规范映射唯一、歧义还是无解。
+实测位置同时求字典序最优），并同步维护最优路径的**精确计数**（Python
+任意精度整数），从而判定最优规范映射唯一、歧义还是无解。
 
 规范映射
 --------
@@ -37,7 +37,6 @@ from dataclasses import dataclass, field
 import numpy as np
 
 MAX_SPAN = 3            # 每组任一侧至多 3 个间隔
-COUNT_CAP = 1_000_000   # 最优映射计数饱和上限（仅用于展示与判歧）
 _INF = 1 << 50          # 不可达代价
 _BIG_ERR = 1 << 40      # 非法组误差占位（远大于任何合法误差限）
 
@@ -112,7 +111,7 @@ class SolveResult:
     status: str                # "unique" | "ambiguous" | "no_solution"
     objective: Objective | None
     witnesses: list[Witness]
-    optimal_count: int         # 最优规范映射数（饱和计数）
+    optimal_count: int         # 最优规范映射的精确数量（任意精度整数）
     configurations: int        # 实际考察的配置数（2m）
     message: str | None = None
 
@@ -184,8 +183,10 @@ def _dp_all_configs(
     np.cumsum(np.asarray(ref, dtype=np.int64), out=PR[1:])
 
     def _blank_row() -> list[np.ndarray]:
+        # 代价三元组为 int64；计数通道使用 object 存放任意精度 Python 整数，
+        # 以精确统计最优路径（合法输入下计数可超过 2^63）。
         return [np.full((S, m + 1), _INF, dtype=np.int64) for _ in range(3)] + \
-               [np.zeros((S, m + 1), dtype=np.int64)]
+               [np.zeros((S, m + 1), dtype=object)]
 
     rows = [_blank_row() for _ in range(MAX_SPAN + 1)]
     rows[0][0][:, 0] = 0  # 基础情形 dp[0][0] = (0, 0, 0)，计数 1
@@ -246,7 +247,8 @@ def _dp_all_configs(
                 np.copyto(c_max, n_max, where=better)
                 np.copyto(c_cnt, n_cnt, where=better)
                 if tied.any():
-                    np.copyto(c_cnt, np.minimum(c_cnt + n_cnt, COUNT_CAP), where=tied)
+                    # 仅对并列单元做任意精度整数相加（避免整窗对象运算）
+                    c_cnt[tied] = c_cnt[tied] + n_cnt[tied]
 
     return rows[n % (MAX_SPAN + 1)]
 
@@ -424,7 +426,7 @@ def solve(ref: list[int], meas: list[int], tolerance: int) -> SolveResult:
                     if (int(mods[c, col]), int(tot[c, col]), int(mx[c, col])) == best]
     optimal_count = 0
     for c in best_configs:
-        optimal_count = min(optimal_count + int(cnt[c, col]), COUNT_CAP)
+        optimal_count += int(cnt[c, col])
 
     objective = Objective(*best)
     status = "unique" if optimal_count == 1 else "ambiguous"

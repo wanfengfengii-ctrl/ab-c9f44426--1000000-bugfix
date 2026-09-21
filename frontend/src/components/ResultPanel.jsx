@@ -90,7 +90,13 @@ export default function ResultPanel({ result, error, loading, blades, refInterva
           </div>
           <div className="stat">
             <span className="stat-label">最优映射数</span>
-            <span className="stat-value" data-testid="stat-count">{result.optimalMappingCount}</span>
+            <span
+              className="stat-value"
+              data-testid="stat-count"
+              data-exact={result.optimalMappingCountText ?? String(result.optimalMappingCount)}
+            >
+              {result.optimalMappingCountText ?? result.optimalMappingCount}
+            </span>
           </div>
           <div className="stat">
             <span className="stat-label">考察配置</span>
