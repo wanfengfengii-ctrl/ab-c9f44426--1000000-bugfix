@@ -50,7 +50,8 @@ docker compose --profile verify up --build --exit-code-from verify
 共 2m 个配置。对每个配置做分组动态规划：`dp[i][j]` 为参考环前 i 个间隔与实测环
 前 j 个间隔对齐的最优字典序代价，转移枚举最后一组两侧跨度 (a, b) ∈ {1,2,3}²。
 所有配置的 DP 以 numpy 向量化批量推进（按参考前缀逐行滚动），并同步维护最优
-路径的饱和计数。
+路径的**精确计数**（int64 快速推进并在高位阈值处饱和探测，一旦触及即以
+Python 任意精度整数重算，因此计数可超出 int64 / JS 安全整数而保持精确）。
 
 一个对位映射由 **(方向, 起点, 各组切分)** 完全确定（其规范形式），最优路径计数
 即最优规范映射数：
@@ -91,6 +92,7 @@ docker compose --profile verify up --build --exit-code-from verify
   "budget": { "limit": 4, "used": 1, "within": true },
   "circumference": 600,
   "optimalMappingCount": 1,
+  "optimalMappingCountText": "1",
   "configurationsExamined": 22,
   "computeMs": 3,
   "witnesses": [
@@ -111,6 +113,9 @@ docker compose --profile verify up --build --exit-code-from verify
 ```
 
 - `witnesses`：唯一解 1 份、歧义 2 份、无解 0 份；
+- `optimalMappingCount`：最优规范映射数的精确值（JSON 数字）；
+  `optimalMappingCountText` 为同一计数的十进制字符串——计数可能超出
+  JavaScript 安全整数范围，前端一律以该字符串精确展示；
 - `direction` / `offset`：实测环的行进方向与对齐起点（原始下标）；
 - `budget.within`：最优改动数是否在预算内（超预算时前端给出警示，不影响求解）；
 - 输入非法（编号重复、数量越界、非正整数、周长不等……）返回 422 与中文原因。

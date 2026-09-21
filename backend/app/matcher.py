@@ -18,8 +18,10 @@
 固定参考环起点（叶片编号是绝对坐标），完整枚举实测环的两个方向与全部
 m 个起点，共 2m 个候选配置。对每个配置做分组动态规划；所有配置的 DP
 以 numpy 向量化方式批量推进（按参考环前缀逐行滚动，每行对所有配置与
-实测位置同时求字典序最优），并同步维护最优路径计数（饱和计数），从而
-判定最优规范映射唯一、歧义还是无解。
+实测位置同时求字典序最优），并同步维护最优路径计数，从而判定最优规范
+映射唯一、歧义还是无解。计数必须精确：快速路径以 int64 推进并在
+``_COUNT_SAT`` 处饱和探测，一旦触及阈值即以 Python 任意精度整数重算，
+因此任意规模输入的最优映射数都是精确值（可超出 int64 / JS 安全整数）。
 
 规范映射
 --------
@@ -37,7 +39,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 MAX_SPAN = 3            # 每组任一侧至多 3 个间隔
-COUNT_CAP = 1_000_000   # 最优映射计数饱和上限（仅用于展示与判歧）
+_COUNT_SAT = (1 << 62) - 1  # int64 计数饱和探测阈值：达到即触发任意精度重算
 _INF = 1 << 50          # 不可达代价
 _BIG_ERR = 1 << 40      # 非法组误差占位（远大于任何合法误差限）
 
@@ -112,7 +114,7 @@ class SolveResult:
     status: str                # "unique" | "ambiguous" | "no_solution"
     objective: Objective | None
     witnesses: list[Witness]
-    optimal_count: int         # 最优规范映射数（饱和计数）
+    optimal_count: int         # 最优规范映射数（精确值，可超出 int64）
     configurations: int        # 实际考察的配置数（2m）
     message: str | None = None
 
@@ -161,13 +163,18 @@ def _aligned_prefix_sums(meas: list[int], m: int) -> np.ndarray:
 
 
 def _dp_all_configs(
-    ref: list[int], meas: list[int], tolerance: int
+    ref: list[int], meas: list[int], tolerance: int, exact: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """对所有 2m 个配置同时做分组 DP，返回最后一行的代价与计数数组。
 
     dp[i][j]：参考环前 i 个间隔与（某配置下）实测环前 j 个间隔对齐的
     最优字典序代价 (改动数, 总绝对误差, 最大组误差) 及最优路径计数。
     转移枚举最后一组两侧的跨度 (a, b) ∈ {1,2,3}²。
+
+    ``exact=False``（快速路径）：计数为 int64，并在 ``_COUNT_SAT`` 处饱和
+    —— 低于阈值的计数是精确的，达到阈值仅表示“需要任意精度重算”。
+    阈值取 (1<<62)-1：饱和值相加不溢出 int64。
+    ``exact=True``：计数使用 Python 任意精度整数（object 数组），结果精确。
     """
     n, m = len(ref), len(meas)
     S = 2 * m
@@ -183,9 +190,11 @@ def _dp_all_configs(
     PR = np.zeros(n + 1, dtype=np.int64)
     np.cumsum(np.asarray(ref, dtype=np.int64), out=PR[1:])
 
+    cnt_dtype = object if exact else np.int64
+
     def _blank_row() -> list[np.ndarray]:
         return [np.full((S, m + 1), _INF, dtype=np.int64) for _ in range(3)] + \
-               [np.zeros((S, m + 1), dtype=np.int64)]
+               [np.zeros((S, m + 1), dtype=cnt_dtype)]
 
     rows = [_blank_row() for _ in range(MAX_SPAN + 1)]
     rows[0][0][:, 0] = 0  # 基础情形 dp[0][0] = (0, 0, 0)，计数 1
@@ -246,7 +255,10 @@ def _dp_all_configs(
                 np.copyto(c_max, n_max, where=better)
                 np.copyto(c_cnt, n_cnt, where=better)
                 if tied.any():
-                    np.copyto(c_cnt, np.minimum(c_cnt + n_cnt, COUNT_CAP), where=tied)
+                    if exact:
+                        np.copyto(c_cnt, c_cnt + n_cnt, where=tied)
+                    else:
+                        np.copyto(c_cnt, np.minimum(c_cnt + n_cnt, _COUNT_SAT), where=tied)
 
     return rows[n % (MAX_SPAN + 1)]
 
@@ -423,8 +435,17 @@ def solve(ref: list[int], meas: list[int], tolerance: int) -> SolveResult:
     best_configs = [c for c in reachable
                     if (int(mods[c, col]), int(tot[c, col]), int(mx[c, col])) == best]
     optimal_count = 0
+    saturated = False
     for c in best_configs:
-        optimal_count = min(optimal_count + int(cnt[c, col]), COUNT_CAP)
+        optimal_count += int(cnt[c, col])
+        if optimal_count >= _COUNT_SAT:
+            saturated = True
+            break
+    if saturated:
+        # int64 快速路径触及饱和阈值：代价 DP 确定性一致，直接以任意精度
+        # 整数重算计数，保证最优映射数精确（可超出 int64 / JS 安全整数）。
+        _, _, _, cnt_exact = _dp_all_configs(ref, meas, tolerance, exact=True)
+        optimal_count = sum(int(cnt_exact[c, col]) for c in best_configs)
 
     objective = Objective(*best)
     status = "unique" if optimal_count == 1 else "ambiguous"

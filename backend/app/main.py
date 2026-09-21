@@ -85,6 +85,7 @@ def _to_response(req: MatchRequest, result: SolveResult, compute_ms: int) -> Mat
         budget=budget,
         circumference=sum(req.reference.intervals),
         optimalMappingCount=result.optimal_count,
+        optimalMappingCountText=str(result.optimal_count),
         configurationsExamined=result.configurations,
         computeMs=compute_ms,
         witnesses=witnesses,

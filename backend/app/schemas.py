@@ -139,7 +139,8 @@ class MatchResponse(BaseModel):
     objective: ObjectiveOut | None
     budget: BudgetOut
     circumference: int
-    optimalMappingCount: int
+    optimalMappingCount: int        # 最优规范映射数（精确值；超出 2^53 时 JS 侧请用下一字段）
+    optimalMappingCountText: str    # 同一计数的十进制字符串，供前端无精度损失展示
     configurationsExamined: int
     computeMs: int
     witnesses: list[WitnessOut]

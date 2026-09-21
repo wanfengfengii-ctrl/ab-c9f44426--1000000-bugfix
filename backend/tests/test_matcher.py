@@ -8,7 +8,6 @@ import random
 import pytest
 
 from app.matcher import (
-    COUNT_CAP,
     MAX_SPAN,
     Objective,
     Witness,
@@ -36,7 +35,7 @@ def _compositions(total: int, parts: int):
 
 
 def brute_force(ref: list[int], meas: list[int], tolerance: int):
-    """指数级穷举所有方向/起点/切分，返回 (最优目标或 None, 最优映射数)。"""
+    """指数级穷举所有方向/起点/切分，返回 (最优目标或 None, 最优映射数精确值)。"""
     n, m = len(ref), len(meas)
     best: tuple[int, int, int] | None = None
     count = 0
@@ -76,7 +75,7 @@ def brute_force(ref: list[int], meas: list[int], tolerance: int):
                             best, count = obj, 1
                         elif obj == best:
                             count += 1
-    return best, min(count, COUNT_CAP)
+    return best, count
 
 
 def _check_against_brute(ref, meas, tolerance):
